@@ -30,18 +30,18 @@ app.get('/api/stats', async (req, res) => {
 
   // BUG A: "most common ghost type" is coming out as the LEAST common one.
   const mostType = (await pool.query(
-    'SELECT ghost_type, COUNT(*)::int AS c FROM sightings GROUP BY ghost_type ORDER BY c ASC'
+    'SELECT ghost_type, COUNT(*)::int AS c FROM sightings GROUP BY ghost_type ORDER BY c DESC'
   )).rows[0].ghost_type
 
   // BUG B: "high activity" should be sightings with MORE THAN 5 witnesses.
   const highActivity = (await pool.query(
-    'SELECT COUNT(*)::int AS c FROM sightings WHERE witnesses >= 5'
+    'SELECT COUNT(*)::int AS c FROM sightings WHERE witnesses > 5'
   )).rows[0].c
 
   // BUG C: "busiest city" should group by CITY, but it groups by the location's
   //        name, so each building is counted on its own.
   const topCity = (await pool.query(
-    'SELECT l.name AS city, COUNT(*)::int AS c FROM sightings s JOIN locations l ON s.location_id = l.id GROUP BY l.name ORDER BY c DESC'
+    'SELECT l.city AS city, COUNT(*)::int AS c FROM sightings s JOIN locations l ON s.location_id = l.id GROUP BY l.city ORDER BY c DESC'
   )).rows[0].city
 
   res.json({ total, mostType, highActivity, topCity })
@@ -50,7 +50,7 @@ app.get('/api/stats', async (req, res) => {
 // GET /api/sightings/search?type=... - sightings of one ghost_type.
 // BUG D: it reads the wrong query-string field, so the filter never matches.
 app.get('/api/sightings/search', async (req, res) => {
-  const wanted = req.query.ghost   // the dashboard sends ?type=...
+  const wanted = req.query.type   // the dashboard sends ?type=...
   const result = await pool.query('SELECT * FROM sightings WHERE ghost_type = $1', [wanted])
   res.json(result.rows)
 })
@@ -60,12 +60,22 @@ app.get('/api/sightings/search', async (req, res) => {
 //         GET /api/sightings/:id here. Return the one matching row, or respond
 //         with the "not found" status code if there is no such sighting.
 
+app.get('/api/sightings/:id', async (req, res) => {
+  const result = await pool.query('SELECT * FROM sightings WHERE id = $1', [req.params.id])
+  if (result.rows.length === 0) {
+    return res.status(404).json({error: 'not found'})
+  }
+  res.json(result.rows[0])
+})
+
 // POST /api/sightings - add a new sighting from the JSON body.
 // TODO 2: insert a row from the body (location_id, ghost_type, witnesses,
 //         reported_at) and respond with the created row and the "created"
 //         status code.
 app.post('/api/sightings', async (req, res) => {
-  res.status(501).json({ error: 'TODO 2 not done' })
+  const {location_id, ghost_type, witnesses, reported_at} = req.body
+  const result = await pool.query('INSERT INTO sightings (location_id, ghost_type, witnesses, reported_at) VALUES ($1, $2, $3, $4) RETURNING *', [location_id, ghost_type, witnesses, reported_at])
+  res.status(201).json(result.rows[0])
 })
 
 if (import.meta.url === `file://${process.argv[1]}`) {
